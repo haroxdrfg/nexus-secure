@@ -8,19 +8,23 @@ const cors = require('cors');
 const crypto = require('crypto');
 const CryptoAdvanced = require('./crypto-advanced');
 const net = require('net');
-const selfsigned = require('selfsigned');const config = require('./config');
+const selfsigned = require('selfsigned');
+const config = require('./config');
 const Validators = require('./validators');
 const rateLimiter = require('./rate-limiter');
 const { AuditLogger: auditLogger } = require('./database');
 
 const app = express();
-const PORT = config.PORT;const TOR_CONFIG = { enabled: false };const corsOptions = {
+const PORT = config.PORT;
+const TOR_CONFIG = { enabled: false };
+const corsOptions = {
   origin: config.ALLOWED_ORIGINS,
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
-};const securityHeadersMiddleware = (req, res, next) => {
+};
+const securityHeadersMiddleware = (req, res, next) => {
   Object.entries(config.SECURITY_HEADERS).forEach(([key, value]) => {
     res.set(key, value);
   });
@@ -67,7 +71,8 @@ class IdentityManager {
       throw new Error('No OTP keys available');
     }
 
-    const otpKey = identity.otpKeys.shift();    identity.otpKeys.push(CryptoAdvanced.generateOneTimePrekeys(1)[0]);
+    const otpKey = identity.otpKeys.shift();
+    identity.otpKeys.push(CryptoAdvanced.generateOneTimePrekeys(1)[0]);
 
     return otpKey;
   }
@@ -165,7 +170,8 @@ class SecureMessageStorage {
 
   deleteMessage(messageId) {
     const entry = this.storage.get(messageId);
-    if (entry) {      entry.ciphertext = crypto.randomBytes(entry.ciphertext.length / 2).toString('hex');
+    if (entry) {
+      entry.ciphertext = crypto.randomBytes(entry.ciphertext.length / 2).toString('hex');
       this.storage.delete(messageId);
     }
   }
@@ -181,9 +187,11 @@ class SecureMessageStorage {
 }
 const identityManager = new IdentityManager();
 const messageStorage = new SecureMessageStorage();
-const genericStorage = new GenericStorage();let sslOptions = null;
+const genericStorage = new GenericStorage();
+let sslOptions = null;
 const certPath = path.join(__dirname, 'cert.crt');
-const keyPath = path.join(__dirname, 'cert.key');if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+const keyPath = path.join(__dirname, 'cert.key');
+if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
   console.log('[*] Certificats non trouvés, génération automatique...');
 
   try {
@@ -197,7 +205,8 @@ const keyPath = path.join(__dirname, 'cert.key');if (!fs.existsSync(certPath) |
       days: 365,
       expires: 31536000 * 1000,
       keySize: 2048
-    });    fs.writeFileSync(keyPath, pems.private);
+    });
+    fs.writeFileSync(keyPath, pems.private);
     fs.writeFileSync(certPath, pems.cert);
 
     console.log('[✓] Certificats auto-signés générés et sauvegardés');
@@ -205,7 +214,8 @@ const keyPath = path.join(__dirname, 'cert.key');if (!fs.existsSync(certPath) |
     console.error('[!] Erreur génération certificat:', e.message);
     process.exit(1);
   }
-}try {
+}
+try {
   sslOptions = {
     key: fs.readFileSync(keyPath),
     cert: fs.readFileSync(certPath)
@@ -215,24 +225,30 @@ const keyPath = path.join(__dirname, 'cert.key');if (!fs.existsSync(certPath) |
   console.error('ERROR: Cannot load certificates');
   console.error(e.message);
   process.exit(1);
-}app.use(cors(corsOptions));
+}
+app.use(cors(corsOptions));
 app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
-app.use(rateLimiter.middleware());app.use((req, res, next) => {
-  if (req.body && Object.keys(req.body).length > 0) {    if (JSON.stringify(req.body).length > 1000000) {
+app.use(rateLimiter.middleware());
+app.use((req, res, next) => {
+  if (req.body && Object.keys(req.body).length > 0) {
+    if (JSON.stringify(req.body).length > 1000000) {
       return res.status(413).json({ error: 'Payload too large' });
     }
   }
   next();
-});app.post('/api/identity/register', (req, res) => {
-  try {    const validation = Validators.validateIdentityRegister(req.body);
+});
+app.post('/api/identity/register', (req, res) => {
+  try {
+    const validation = Validators.validateIdentityRegister(req.body);
     if (!validation.valid) {
       AuditLogger.log('identity_registration', 'unknown', 'failed', 'INVALID_INPUT');
       return res.status(400).json({ error: 'Invalid input', details: validation.errors });
     }
 
-    const { participantId, identityPublicKey, signaturePublicKey } = req.body;    if (identityManager.getIdentity(participantId)) {
+    const { participantId, identityPublicKey, signaturePublicKey } = req.body;
+    if (identityManager.getIdentity(participantId)) {
       return res.status(409).json({ error: 'Identity already registered' });
     }
 
@@ -254,7 +270,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
     AuditLogger.log('identity_registration', req.body?.participantId || 'unknown', 'failed', error.message);
     res.status(500).json({ error: 'Registration failed' });
   }
-});app.get('/api/identity/:participantId', (req, res) => {
+});
+app.get('/api/identity/:participantId', (req, res) => {
   try {
     const identity = identityManager.getIdentity(req.params.participantId);
 
@@ -274,13 +291,15 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});app.post('/api/messages/store', (req, res) => {
+});
+app.post('/api/messages/store', (req, res) => {
   try {
     const { messageId, encryptedData } = req.body;
 
     if (!messageId || !encryptedData) {
       return res.status(400).json({ error: 'Missing messageId or encryptedData' });
-    }    const entry = messageStorage.encryptMessage(messageId, JSON.stringify(encryptedData));
+    }
+    const entry = messageStorage.encryptMessage(messageId, JSON.stringify(encryptedData));
 
     auditLogger.log('message_storage', messageId, 'success');
 
@@ -289,7 +308,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
     auditLogger.log('message_storage', req.body.messageId, 'failed', error.message);
     res.status(400).json({ error: error.message });
   }
-});app.get('/api/messages/retrieve/:messageId', (req, res) => {
+});
+app.get('/api/messages/retrieve/:messageId', (req, res) => {
   try {
     const encrypted = messageStorage.decryptMessage(req.params.messageId);
 
@@ -300,7 +320,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
     auditLogger.log('message_retrieval', req.params.messageId, 'failed', error.message);
     res.status(404).json({ error: error.message });
   }
-});app.delete('/api/messages/:messageId', (req, res) => {
+});
+app.delete('/api/messages/:messageId', (req, res) => {
   try {
     messageStorage.deleteMessage(req.params.messageId);
 
@@ -310,7 +331,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});app.post('/api/storage/:key', (req, res) => {
+});
+app.post('/api/storage/:key', (req, res) => {
   try {
     const { value } = req.body;
     const key = decodeURIComponent(req.params.key);
@@ -326,7 +348,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});app.get('/api/storage/list/:prefix', (req, res) => {
+});
+app.get('/api/storage/list/:prefix', (req, res) => {
   try {
     const prefix = decodeURIComponent(req.params.prefix);
     const keys = genericStorage.listKeys(prefix);
@@ -336,7 +359,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});app.get('/api/storage/:key', (req, res) => {
+});
+app.get('/api/storage/:key', (req, res) => {
   try {
     const key = decodeURIComponent(req.params.key);
 
@@ -355,7 +379,8 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});app.delete('/api/storage/:key', (req, res) => {
+});
+app.delete('/api/storage/:key', (req, res) => {
   try {
     const key = decodeURIComponent(req.params.key);
 
@@ -370,10 +395,12 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
-});app.get('/api/audit/logs', (req, res) => {
-  const logs = auditLogger.getLogs(100);
+});
+app.get('/api/audit/logs', (req, res) => {
+  const logs = auditLogger.exportLogs(100);
   res.json({ logs, count: logs.length });
-});app.get('/api/security/status', (req, res) => {
+});
+app.get('/api/security/status', (req, res) => {
   res.json({
     version: '2.0-tor-enhanced',
     torEnabled: TOR_CONFIG.enabled,
@@ -396,11 +423,13 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
     torServiceName: TOR_CONFIG.name,
     hiddenServiceCompatible: TOR_CONFIG.supportHiddenService
   });
-});setInterval(() => {
-  messageStorage.cleanupExpired();  auditLogger.log('maintenance', 'system', 'success', 'cleanup_completed');
+});
+setInterval(() => {
+  messageStorage.cleanupExpired();
+  auditLogger.log('maintenance', 'system', 'success', 'cleanup_completed');
 }, 60000);
-  res.sendFile(path.join(__dirname, 'index.html'));
-});const getLocalIP = () => {
+
+const getLocalIP = () => {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
@@ -410,8 +439,10 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
     }
   }
   return 'localhost';
-};const initTORService = () => {
-  if (!TOR_CONFIG || !TOR_CONFIG.enabled) return;  try {
+};
+const initTORService = () => {
+  if (!TOR_CONFIG || !TOR_CONFIG.enabled) return;
+  try {
     if (!fs.existsSync(TOR_CONFIG.hiddenServiceDir)) {
       fs.mkdirSync(TOR_CONFIG.hiddenServiceDir, { recursive: true });
     }
@@ -419,14 +450,19 @@ app.use(rateLimiter.middleware());app.use((req, res, next) => {
   } catch(e) {
 
   }
-};https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
-  const localIP = getLocalIP();  initTORService();
+};
+https.createServer(sslOptions, app).listen(PORT, '0.0.0.0', () => {
+  const localIP = getLocalIP();
+  initTORService();
 
   console.log('Server running on port ' + PORT);
-});app.use((req, res, next) => {  const xForwardedFor = req.get('X-Forwarded-For');
+});
+app.use((req, res, next) => {
+  const xForwardedFor = req.get('X-Forwarded-For');
   const isTorConnection = xForwardedFor && xForwardedFor.includes('.onion');
 
-  if (isTorConnection) {    auditLogger.log('tor_connection', 'tor-user-' + crypto.randomBytes(8).toString('hex'), 'success');
+  if (isTorConnection) {
+    auditLogger.log('tor_connection', 'tor-user-' + crypto.randomBytes(8).toString('hex'), 'success');
   }
 
   next();
