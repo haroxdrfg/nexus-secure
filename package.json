@@ -1,0 +1,29 @@
+{
+  "name": "nexus-secure-v2",
+  "version": "2.1.0",
+  "description": "E2E encrypted messaging with ECDH + ECDSA (Security Hardened)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "setup": "bash setup-init.sh"
+  },
+  "keywords": [
+    "e2e",
+    "encryption",
+    "ecdh",
+    "ecdsa",
+    "secure-messaging",
+    "security-hardened"
+  ],
+  "author": "NEXUS SECURE",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "selfsigned": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
