@@ -7,17 +7,20 @@ class ForwardSecrecyRatchet {
     }
 
     this.masterKey = sessionMasterKey;
-    this.chainKey = sessionMasterKey.copy();
+    this.chainKey = Buffer.from(sessionMasterKey);
     this.messageCounter = counterStart;
     this.ratchetHistory = [];
   }
 
-  deriveNextMessageKey() {    const messageKey = crypto
-      .hkdfSync('sha256', this.chainKey, Buffer.alloc(0), 'message', 32);    const newChainKey = crypto
+  deriveNextMessageKey() {
+    const messageKey = crypto
+      .hkdfSync('sha256', this.chainKey, Buffer.alloc(0), 'message', 32);
+    const newChainKey = crypto
       .hkdfSync('sha256', this.chainKey, Buffer.alloc(0), 'chain', 32);
 
     this.chainKey = newChainKey;
-    this.messageCounter++;    this.ratchetHistory.push({
+    this.messageCounter++;
+    this.ratchetHistory.push({
       counter: this.messageCounter - 1,
       timestamp: Date.now(),
       keyLength: messageKey.length
@@ -31,7 +34,7 @@ class ForwardSecrecyRatchet {
   }
 
   getChainKey() {
-    return this.chainKey.copy();
+    return Buffer.from(this.chainKey);
   }
 
   getCounter() {
@@ -45,7 +48,8 @@ class ForwardSecrecyRatchet {
 
     if (!nonce || nonce.length !== 16) {
       throw new Error('Invalid nonce');
-    }    const encParams = crypto.hkdfSync(
+    }
+    const encParams = crypto.hkdfSync(
       'sha256',
       messageKey,
       nonce,
@@ -72,14 +76,18 @@ class ForwardSecrecyRatchet {
   encryptMessage(plaintext, additionalData = '') {
     if (typeof plaintext !== 'string' && !Buffer.isBuffer(plaintext)) {
       throw new Error('Invalid plaintext');
-    }    const { messageKey, counter } = this.deriveNextMessageKey();
-    const nonce = crypto.randomBytes(16);    const { key, iv } = ForwardSecrecyRatchet.deriveEncryptionParams(messageKey, nonce);    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    }
+    const { messageKey, counter } = this.deriveNextMessageKey();
+    const nonce = crypto.randomBytes(16);
+    const { key, iv } = ForwardSecrecyRatchet.deriveEncryptionParams(messageKey, nonce);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     if (additionalData) {
       cipher.setAAD(Buffer.from(additionalData));
     }
 
     const ciphertext = cipher.update(plaintext, 'utf8', 'hex') + cipher.final('hex');
-    const tag = cipher.getAuthTag();    const authKey = ForwardSecrecyRatchet.deriveAuthKey(messageKey, nonce);
+    const tag = cipher.getAuthTag();
+    const authKey = ForwardSecrecyRatchet.deriveAuthKey(messageKey, nonce);
     const signature = crypto
       .createHmac('sha256', authKey)
       .update(ciphertext + counter.toString())
@@ -101,12 +109,15 @@ class ForwardSecrecyRatchet {
       throw new Error('Invalid decryption parameters');
     }
 
-    const { ciphertext, iv, nonce, tag, signature } = encryptedPacket;    if (!ciphertext || !iv || !nonce || !tag || !signature) {
+    const { ciphertext, iv, nonce, tag, signature } = encryptedPacket;
+    if (!ciphertext || !iv || !nonce || !tag || !signature) {
       throw new Error('Missing decryption packet fields');
-    }    const { key, iv: deriveIv } = ForwardSecrecyRatchet.deriveEncryptionParams(
+    }
+    const { key, iv: deriveIv } = ForwardSecrecyRatchet.deriveEncryptionParams(
       messageKey,
       Buffer.from(nonce, 'hex')
-    );    const authKey = ForwardSecrecyRatchet.deriveAuthKey(messageKey, Buffer.from(nonce, 'hex'));
+    );
+    const authKey = ForwardSecrecyRatchet.deriveAuthKey(messageKey, Buffer.from(nonce, 'hex'));
     const expectedSignature = crypto
       .createHmac('sha256', authKey)
       .update(ciphertext + encryptedPacket.counter.toString())
@@ -114,7 +125,8 @@ class ForwardSecrecyRatchet {
 
     if (signature !== expectedSignature) {
       throw new Error('Invalid signature - message tampering detected');
-    }    const decipher = crypto.createDecipheriv('aes-256-gcm', key, deriveIv);
+    }
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, deriveIv);
     decipher.setAuthTag(Buffer.from(tag, 'hex'));
 
     const plaintext = decipher.update(ciphertext, 'hex', 'utf8') + decipher.final('utf8');

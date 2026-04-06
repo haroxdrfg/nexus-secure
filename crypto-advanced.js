@@ -90,13 +90,13 @@ class CryptoAdvanced {
     return sharedSecret;
   }
 
-  static signData(privateKey, data) {
+  static signData(data, privateKey) {
     const sign = crypto.createSign('sha256');
     sign.update(data);
     return sign.sign(privateKey, 'hex');
   }
 
-  static verifySignature(publicKey, data, signature) {
+  static verifySignature(data, publicKey, signature) {
     const verify = crypto.createVerify('sha256');
     verify.update(data);
     return verify.verify(publicKey, Buffer.from(signature, 'hex'));
