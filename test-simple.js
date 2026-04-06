@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-// Simple test to verify all modules load correctly
 const crypto = require('crypto');
 const assert = require('assert');
 
@@ -150,7 +149,6 @@ try {
   assert(typeof persistence.auditLog === 'function');
   assert(typeof persistence.verifyAuditLogIntegrity === 'function');
   
-  // Create log entry
   persistence.auditLog('test_event', 'alice', { action: 'test' });
   
   console.log('* Audit logging initialized');

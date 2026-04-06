@@ -1,14 +1,7 @@
-/**
- * Persistance SQLite avec Audit
- */
-
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const config = require('./config');
-
-// Créer dossier logs s'il n'existe pas
-const logsDir = path.join(__dirname, 'logs');
+const config = require('./config');const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
@@ -29,10 +22,7 @@ class AuditLogger {
       details: this.sanitizeDetails(details)
     };
 
-    this.logs.push(entry);
-
-    // Écrire immédiatement à disque
-    if (config.AUDIT.logToFile) {
+    this.logs.push(entry);    if (config.AUDIT.logToFile) {
       this.appendToFile(entry);
     }
   }
@@ -81,7 +71,7 @@ class SecureMessageStorage {
       const masterKey = crypto.randomBytes(32);
       const iv = crypto.randomBytes(12);
       const cipher = crypto.createCipheriv(config.CRYPTO.algorithm, masterKey, iv);
-      
+
       const encrypted = cipher.update(plaintext, 'utf8', 'hex') + cipher.final('hex');
       const authTag = cipher.getAuthTag();
 
@@ -120,10 +110,10 @@ class SecureMessageStorage {
         Buffer.from(entry.masterKey, 'hex'),
         Buffer.from(entry.iv, 'hex')
       );
-      
+
       decipher.setAuthTag(Buffer.from(entry.authTag, 'hex'));
       const decrypted = decipher.update(entry.ciphertext, 'hex', 'utf8') + decipher.final('utf8');
-      
+
       return decrypted;
     } catch (e) {
       throw new Error('Decryption failed: ' + e.message);
@@ -141,9 +131,7 @@ class SecureMessageStorage {
 
   deleteMessage(messageId) {
     if (this.storage.has(messageId)) {
-      const entry = this.storage.get(messageId);
-      // Overwrite with random data
-      entry.ciphertext = crypto.randomBytes(Buffer.byteLength(entry.ciphertext) / 2).toString('hex');
+      const entry = this.storage.get(messageId);      entry.ciphertext = crypto.randomBytes(Buffer.byteLength(entry.ciphertext) / 2).toString('hex');
       entry.masterKey = crypto.randomBytes(32).toString('hex');
       this.storage.delete(messageId);
     }
@@ -152,10 +140,7 @@ class SecureMessageStorage {
   clear() {
     this.storage.clear();
   }
-}
-
-// Export
-module.exports = {
+}module.exports = {
   AuditLogger: new AuditLogger(),
   SecureMessageStorage: new SecureMessageStorage()
 };

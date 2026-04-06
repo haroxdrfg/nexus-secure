@@ -1,8 +1,3 @@
-/**
- * Rate Limiting avancé avec support proxy
- * Combine IP-based + Identity-based limiting
- */
-
 const config = require('./config');
 
 class RateLimiter {
@@ -13,9 +8,7 @@ class RateLimiter {
     this.blockedIds = new Map();
   }
 
-  getClientIP(req) {
-    // Proxy support: X-Forwarded-For est défini par Nginx
-    const xForwardedFor = req.headers['x-forwarded-for'];
+  getClientIP(req) {    const xForwardedFor = req.headers['x-forwarded-for'];
     if (xForwardedFor) {
       return xForwardedFor.split(',')[0].trim();
     }
@@ -24,7 +17,7 @@ class RateLimiter {
 
   isIPBlocked(ip) {
     if (!this.blockedIPs.has(ip)) return false;
-    
+
     const blockTime = this.blockedIPs.get(ip);
     if (Date.now() - blockTime > config.RATE_LIMIT.blockDuration) {
       this.blockedIPs.delete(ip);
@@ -35,7 +28,7 @@ class RateLimiter {
 
   isIdBlocked(participantId) {
     if (!this.blockedIds.has(participantId)) return false;
-    
+
     const blockTime = this.blockedIds.get(participantId);
     if (Date.now() - blockTime > config.RATE_LIMIT.blockDuration) {
       this.blockedIds.delete(participantId);
@@ -96,10 +89,8 @@ class RateLimiter {
       return { allowed: true, limitType: 'id' };
     }
 
-    record.count++;
-    // Stricter limit for per-identity (50 vs 100 per IP)
-    const idLimit = Math.max(config.RATE_LIMIT.maxRequests / 2, 50);
-    
+    record.count++;    const idLimit = Math.max(config.RATE_LIMIT.maxRequests / 2, 50);
+
     if (record.count > idLimit) {
       this.blockedIds.set(participantId, now);
       return {
@@ -115,10 +106,7 @@ class RateLimiter {
 
   middleware() {
     return (req, res, next) => {
-      const ip = this.getClientIP(req);
-      
-      // Check IP-based limit
-      const ipCheck = this.checkIPLimit(ip);
+      const ip = this.getClientIP(req);      const ipCheck = this.checkIPLimit(ip);
       if (!ipCheck.allowed) {
         res.set('Retry-After', ipCheck.retryAfter);
         return res.status(429).json({
@@ -126,10 +114,7 @@ class RateLimiter {
           retryAfter: ipCheck.retryAfter,
           limitType: 'ip'
         });
-      }
-
-      // Check identity-based limit (if available)
-      const participantId = req.user?.sub || req.body?.participantId;
+      }      const participantId = req.user?.sub || req.body?.participantId;
       if (participantId) {
         const idCheck = this.checkIdLimit(participantId);
         if (!idCheck.allowed) {

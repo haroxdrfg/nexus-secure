@@ -1,7 +1,3 @@
-/**
- * Validation stricte des inputs
- */
-
 class Validators {
   static isValidBase64(str) {
     try {
@@ -18,17 +14,17 @@ class Validators {
   }
 
   static isValidParticipantId(id) {
-    return typeof id === 'string' && 
-           id.length >= 10 && 
-           id.length <= 128 && 
+    return typeof id === 'string' &&
+           id.length >= 10 &&
+           id.length <= 128 &&
            /^[a-zA-Z0-9_-]*$/.test(id);
   }
 
   static isValidPublicKey(key) {
-    return typeof key === 'string' && 
-           key.length > 50 && 
+    return typeof key === 'string' &&
+           key.length > 50 &&
            key.length < 2000 &&
-           (key.startsWith('-----BEGIN PUBLIC KEY-----') || 
+           (key.startsWith('-----BEGIN PUBLIC KEY-----') ||
             Validators.isValidBase64(key) ||
             Validators.isValidHex(key));
   }
@@ -55,11 +51,11 @@ class Validators {
 
   static validateIdentityRegister(body) {
     const errors = [];
-    
+
     if (!Validators.isValidParticipantId(body.participantId)) {
       errors.push('Invalid participantId');
     }
-    
+
     if (!Validators.isValidPublicKey(body.identityPublicKey)) {
       errors.push('Invalid identityPublicKey');
     }

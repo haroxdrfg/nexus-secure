@@ -1,14 +1,7 @@
 const crypto = require('crypto');
 
-/**
- * Cryptographic utilities for NEXUS SECURE v2
- * Implements ECDH, ECDSA, and supporting functions
- */
-
 class CryptoAdvanced {
-  /**
-   * Compute identity fingerprint from public key
-   */
+
   static computeIdentityFingerprint(identityPublicKey) {
     const hash = crypto
       .createHash('sha256')
@@ -17,9 +10,6 @@ class CryptoAdvanced {
     return hash;
   }
 
-  /**
-   * Generate signed prekey (ECDSA)
-   */
   static generateSignedPrekey() {
     const keyPair = crypto.generateKeyPairSync('ec', {
       namedCurve: 'prime256v1',
@@ -36,9 +26,6 @@ class CryptoAdvanced {
     };
   }
 
-  /**
-   * Generate one-time prekeys (OTP)
-   */
   static generateOneTimePrekeys(count) {
     const keys = [];
     for (let i = 0; i < count; i++) {
@@ -51,9 +38,6 @@ class CryptoAdvanced {
     return keys;
   }
 
-  /**
-   * Detect identity change
-   */
   static detectIdentityChange(participantId, newFingerprint, identityHistory) {
     if (!identityHistory.has(participantId)) {
       identityHistory.set(participantId, newFingerprint);
@@ -68,9 +52,6 @@ class CryptoAdvanced {
     return false;
   }
 
-  /**
-   * Derive emojis from fingerprint (SAS verification)
-   */
   static deriveEmojis(fingerprint, count) {
     const emojiList = [
       'ALFA', 'BRAVO', 'CHARLIE', 'DELTA', 'ECHO', 'FOXTROT',
@@ -93,9 +74,6 @@ class CryptoAdvanced {
     return emojis;
   }
 
-  /**
-   * ECDH key agreement
-   */
   static generateECDHKeyPair() {
     return crypto.generateKeyPairSync('ec', {
       namedCurve: 'prime256v1',
@@ -104,10 +82,6 @@ class CryptoAdvanced {
     });
   }
 
-  /**
-   * Compute shared secret from ECDH
-   * Throws error if key agreement fails
-   */
   static computeSharedSecret(privateKey, publicKey) {
     const sharedSecret = crypto.diffieHellman({
       privateKey: crypto.createPrivateKey(privateKey),
@@ -116,44 +90,27 @@ class CryptoAdvanced {
     return sharedSecret;
   }
 
-  /**
-   * Sign data with ECDSA
-   * Throws error if signing fails - no silent fallbacks
-   */
   static signData(privateKey, data) {
     const sign = crypto.createSign('sha256');
     sign.update(data);
     return sign.sign(privateKey, 'hex');
   }
 
-  /**
-   * Verify signature
-   * Throws error if verification fails
-   */
   static verifySignature(publicKey, data, signature) {
     const verify = crypto.createVerify('sha256');
     verify.update(data);
     return verify.verify(publicKey, Buffer.from(signature, 'hex'));
   }
 
-  /**
-   * Derive encryption key from master key
-   */
   static deriveKey(masterKey, salt, info) {
     return crypto
       .hkdf('sha256', masterKey, salt, info, 32);
   }
 
-  /**
-   * Generate random IV for AES-GCM
-   */
   static generateIV() {
     return crypto.randomBytes(12);
   }
 
-  /**
-   * AES-256-GCM encryption
-   */
   static encryptAES256GCM(plaintext, key, iv) {
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     const encrypted = cipher.update(plaintext, 'utf8', 'hex') + cipher.final('hex');
@@ -165,9 +122,6 @@ class CryptoAdvanced {
     };
   }
 
-  /**
-   * AES-256-GCM decryption
-   */
   static decryptAES256GCM(encrypted, key, iv, authTag) {
     try {
       const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'));
