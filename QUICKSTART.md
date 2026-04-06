@@ -1,31 +1,44 @@
 # Quick Start Guide
 
-## Installation and First Run
+## Requirements
 
-### Step 1: Install Dependencies
+- Node.js 20.0.0 or higher
+- npm
+
+## Installation
+
+### Step 1: Clone the repository
+```bash
+git clone https://github.com/haroxdrfg/nexus-secure.git
+cd nexus-secure
+```
+
+### Step 2: Install dependencies
 ```bash
 npm install
 ```
 
-### Step 2: Configure Environment
+### Step 3: Configure the server
 ```bash
 cp config.example.js config.js
 ```
 
-Create a `.env` file with:
+Create a `.env` file at the project root with the following variables:
 ```
-JWT_SECRET=your_strong_random_secret_here_min_32_chars
+JWT_SECRET=your_strong_random_secret_minimum_32_characters
 NODE_ENV=production
 PORT=3000
 ALLOWED_ORIGINS=http://localhost:3000
 ```
 
-### Step 3: Start Server
+Why `.env` is not included in the repository: the `.env` file contains secrets (JWT signing key, configuration) that must never be public. Each deployment generates its own secrets. The `config.example.js` file serves as a template.
+
+### Step 4: Start the server
 ```bash
 npm start
 ```
 
-Server will start on port 3000 (or configured PORT).
+The server starts on port 3000 by default (configurable via PORT in `.env`).
 
 ## Running Tests
 
@@ -34,21 +47,27 @@ Unit tests:
 node test-simple.js
 ```
 
-Integration tests:
+End-to-end security tests:
 ```bash
 node test-e2e.js
 ```
 
-## Directory Structure
+## File Overview
 
-- `server.js` - Main application
-- `crypto-advanced.js` - Encryption functions
-- `e2e-secure.js` - Zero-knowledge storage
-- `forward-secrecy.js` - Per-message key derivation
-- `persistence.js` - Audit and logging
-- `rate-limiter.js` - Request throttling
-- `test-e2e.js` - Security verification tests
-- `nginx-config.conf` - Production reverse proxy setup
+- `server.js` - Express server entry point
+- `crypto-advanced.js` - Cryptographic operations (ECDH, ECDSA, AES-256-GCM)
+- `e2e-secure.js` - Zero-knowledge encrypted message storage
+- `forward-secrecy.js` - Per-message key derivation ratchet
+- `persistence.js` - HMAC-signed audit logging
+- `rate-limiter.js` - Dual-layer request rate limiting
+- `database.js` - In-memory storage with integrity checking
+- `validators.js` - Input validation and sanitization
+- `config.example.js` - Configuration template
+- `test-e2e.js` - End-to-end security test suite
+- `test-simple.js` - Unit tests
+- `nginx-config.conf` - Reverse proxy configuration for production
+- `deploy-production.sh` - Production deployment script
+- `install-ubuntu.sh` - Ubuntu server setup script
 
 ## Production Deployment
 
