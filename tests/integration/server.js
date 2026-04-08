@@ -14,10 +14,6 @@ const Validators = require('./validators');
 const rateLimiter = require('./rate-limiter');
 const { AuditLogger: auditLogger } = require('./database');
 const { ALLOWED_MIME_TYPES } = require('./tests/media-encrypt');
-const { ALLOWED_FILE_TYPES, senderEncryptFile, recipientDecryptFile } = require('./file-encrypt');
-const { TurnstileVerifier, ProofOfWork, FingerprintThrottle } = require('./anti-bot');
-const { BlindEnvelopeStore, MetadataStripper, SealedSender } = require('./blind-server');
-const { SnowflakeProxy, TrafficShaper } = require('./snowflake');
 
 const app = express();
 const PORT = config.PORT;
@@ -193,7 +189,7 @@ class SecureMessageStorage {
 class MediaEnvelopeStorage {
   constructor() {
     this.storage = new Map();
-    this.TTL = 2 * 60 * 1000;
+    this.TTL = 10 * 60 * 1000;
   }
 
   store(mediaId, envelope) {
@@ -236,14 +232,6 @@ const identityManager = new IdentityManager();
 const messageStorage = new SecureMessageStorage();
 const genericStorage = new GenericStorage();
 const mediaStorage = new MediaEnvelopeStorage();
-const blindStore = new BlindEnvelopeStore();
-const metadataStripper = new MetadataStripper();
-const sealedSender = new SealedSender();
-const proofOfWork = new ProofOfWork(4);
-const fpThrottle = new FingerprintThrottle();
-const turnstile = new TurnstileVerifier(config.TURNSTILE.secretKey);
-const snowflakeProxy = new SnowflakeProxy();
-const trafficShaper = new TrafficShaper();
 let sslOptions = null;
 const certPath = path.join(__dirname, 'cert.crt');
 const keyPath = path.join(__dirname, 'cert.key');
@@ -287,10 +275,8 @@ app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 app.use(rateLimiter.middleware());
-app.use(fpThrottle.middleware());
-app.use(metadataStripper.middleware());
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/media/') || req.path.startsWith('/api/file/') || req.path.startsWith('/api/blind/')) return next();
+  if (req.path.startsWith('/api/media/')) return next();
   if (req.body && Object.keys(req.body).length > 0) {
     if (JSON.stringify(req.body).length > 1000000) {
       return res.status(413).json({ error: 'Payload too large' });
@@ -497,169 +483,6 @@ app.delete('/api/media/:mediaId', (req, res) => {
   }
 });
 
-app.post('/api/file/store', express.json({ limit: '500mb' }), (req, res) => {
-  try {
-    const { fileId, envelope } = req.body;
-    if (!fileId || !envelope) {
-      return res.status(400).json({ error: 'Missing fileId or envelope' });
-    }
-    if (!envelope.mimeType || !ALLOWED_FILE_TYPES.has(envelope.mimeType)) {
-      return res.status(400).json({ error: 'File type not allowed' });
-    }
-    if (!envelope.encrypted || !envelope.salt || !envelope.ephemeralPub || !envelope.metaHmac || !envelope.encryptedFileName) {
-      return res.status(400).json({ error: 'Incomplete envelope' });
-    }
-    mediaStorage.store(fileId, envelope);
-    auditLogger.log('file_store', fileId, 'success');
-    res.json({ success: true, fileId, expiresIn: mediaStorage.TTL });
-  } catch (error) {
-    auditLogger.log('file_store', req.body?.fileId || 'unknown', 'failed', error.message);
-    res.status(400).json({ error: error.message });
-  }
-});
-app.get('/api/file/retrieve/:fileId', (req, res) => {
-  try {
-    const envelope = mediaStorage.retrieve(req.params.fileId);
-    auditLogger.log('file_retrieve', req.params.fileId, 'success');
-    res.json({ envelope });
-  } catch (error) {
-    auditLogger.log('file_retrieve', req.params.fileId, 'failed', error.message);
-    res.status(404).json({ error: error.message });
-  }
-});
-app.delete('/api/file/:fileId', (req, res) => {
-  try {
-    mediaStorage.delete(req.params.fileId);
-    auditLogger.log('file_delete', req.params.fileId, 'success');
-    res.json({ success: true });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.post('/api/blind/store', express.json({ limit: '150mb' }), (req, res) => {
-  try {
-    const { bucket, envelopeId, blob } = req.body;
-    if (!bucket || !envelopeId || !blob) {
-      return res.status(400).json({ error: 'Missing bucket, envelopeId or blob' });
-    }
-    const result = blindStore.put(bucket, envelopeId, blob);
-    auditLogger.log('blind_store', envelopeId, 'success');
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.get('/api/blind/retrieve/:bucket/:envelopeId', (req, res) => {
-  try {
-    const result = blindStore.get(req.params.bucket, req.params.envelopeId);
-    if (!result) return res.status(404).json({ error: 'Not found' });
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.delete('/api/blind/:bucket/:envelopeId', (req, res) => {
-  try {
-    blindStore.remove(req.params.bucket, req.params.envelopeId);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.post('/api/blind/seal', (req, res) => {
-  try {
-    const { sender, bucket, payload } = req.body;
-    if (!sender || !bucket || !payload) {
-      return res.status(400).json({ error: 'Missing sender, bucket or payload' });
-    }
-    const sealed = sealedSender.seal(sender, bucket, payload);
-    res.json(sealed);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.post('/api/blind/unseal', (req, res) => {
-  try {
-    const result = sealedSender.unseal(req.body);
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ error: 'Unseal failed' });
-  }
-});
-app.get('/api/blind/server-key', (req, res) => {
-  res.json({ publicKey: sealedSender.getServerPublicKey().toString('base64') });
-});
-app.get('/api/turnstile/site-key', (req, res) => {
-  res.json({ siteKey: config.TURNSTILE.siteKey });
-});
-app.post('/api/turnstile/verify', async (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ error: 'Missing token' });
-  const ip = req.ip || req.connection.remoteAddress;
-  const result = await turnstile.verify(token, ip);
-  res.json(result);
-});
-app.get('/api/pow/challenge', (req, res) => {
-  const challenge = proofOfWork.generateChallenge();
-  res.json(challenge);
-});
-app.post('/api/pow/verify', (req, res) => {
-  const { challenge, nonce } = req.body;
-  if (!challenge || nonce === undefined) {
-    return res.status(400).json({ error: 'Missing challenge or nonce' });
-  }
-  const result = proofOfWork.verifyProof(challenge, String(nonce));
-  if (!result.valid) {
-    return res.status(403).json({ error: 'Invalid proof', reason: result.reason });
-  }
-  res.json({ success: true, hash: result.hash });
-});
-app.post('/api/snowflake/enable', (req, res) => {
-  res.json(snowflakeProxy.enable());
-});
-app.post('/api/snowflake/disable', (req, res) => {
-  res.json(snowflakeProxy.disable());
-});
-app.get('/api/snowflake/status', (req, res) => {
-  res.json(snowflakeProxy.getStats());
-});
-app.post('/api/snowflake/connect', (req, res) => {
-  try {
-    const peer = snowflakeProxy.simulatePeerConnection();
-    res.json(peer);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.post('/api/snowflake/relay', (req, res) => {
-  try {
-    const { peerId, data } = req.body;
-    if (!peerId || !data) return res.status(400).json({ error: 'Missing peerId or data' });
-    const result = snowflakeProxy.simulateRelay(peerId, data);
-    res.json(result);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.post('/api/snowflake/disconnect', (req, res) => {
-  try {
-    const { peerId } = req.body;
-    res.json(snowflakeProxy.disconnectPeer(peerId));
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.post('/api/snowflake/shape', (req, res) => {
-  try {
-    const { pattern } = req.body;
-    res.json(trafficShaper.setPattern(pattern));
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-app.get('/api/snowflake/patterns', (req, res) => {
-  res.json({ patterns: trafficShaper.getPatterns() });
-});
 app.get('/api/audit/logs', (req, res) => {
   const logs = auditLogger.exportLogs(100);
   res.json({ logs, count: logs.length });
@@ -670,13 +493,8 @@ app.get('/api/security/status', (req, res) => {
     torEnabled: TOR_CONFIG.enabled,
     connectionType: req.isTorConnection ? 'Tor Hidden Service' : 'Direct HTTPS',
     features: [
-      'Double Ratchet Algorithm: Active (X25519 + HKDF-SHA256)',
-      'X3DH Key Agreement: Active (4-DH with OTP)',
-      'Encrypted File Transfer: Active (AES-256-GCM chunked)',
-      'Blind Server: Active (sealed sender + metadata stripping)',
-      'Anti-Bot: Active (PoW + fingerprint throttle)',
-      'Snowflake Proxy: ' + (snowflakeProxy.isEnabled() ? 'Active' : 'Standby'),
-      'Traffic Shaping: Active (video-call/social-scroll/browsing)',
+      'Double Ratchet Algorithm (planned v2.1)',
+      'X3DH Key Agreement (planned v2.1)',
       'Rate Limiting: Active (100 req/min)',
       'Audit Logging: Active (metadata-only)',
       'Identity Management: Active (TOFU model)',
@@ -696,7 +514,6 @@ app.get('/api/security/status', (req, res) => {
 setInterval(() => {
   messageStorage.cleanupExpired();
   mediaStorage.cleanupExpired();
-  blindStore.cleanup();
   auditLogger.log('maintenance', 'system', 'success', 'cleanup_completed');
 }, 60000);
 
