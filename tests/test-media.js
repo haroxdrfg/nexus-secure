@@ -110,7 +110,6 @@ test('Chunk falsifié : déchiffrement doit échouer (intégrité GCM)', () => {
   const data      = crypto.randomBytes(1024);
   const aesKey    = crypto.randomBytes(32);
   const encrypted = encryptMedia(data, aesKey);
-  // Corrompt l'authTag du premier chunk
   encrypted.chunks[0].authTag = crypto.randomBytes(16).toString('base64');
   assert.throws(() => decryptMedia(encrypted, aesKey));
 });
