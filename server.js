@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
@@ -13,6 +13,7 @@ const config = require('./config');
 const Validators = require('./validators');
 const rateLimiter = require('./rate-limiter');
 const { AuditLogger: auditLogger } = require('./database');
+const { ALLOWED_MIME_TYPES } = require('./tests/media-encrypt');
 
 const app = express();
 const PORT = config.PORT;
@@ -185,9 +186,52 @@ class SecureMessageStorage {
     }
   }
 }
+class MediaEnvelopeStorage {
+  constructor() {
+    this.storage = new Map();
+    this.TTL = 10 * 60 * 1000;
+  }
+
+  store(mediaId, envelope) {
+    if (!mediaId || typeof mediaId !== 'string' || mediaId.length > 128) {
+      throw new Error('mediaId invalide');
+    }
+    if (!envelope || typeof envelope !== 'object') {
+      throw new Error('Enveloppe invalide');
+    }
+    this.storage.set(mediaId, {
+      envelope,
+      expiresAt: Date.now() + this.TTL,
+      storedAt: Date.now()
+    });
+  }
+
+  retrieve(mediaId) {
+    const entry = this.storage.get(mediaId);
+    if (!entry) throw new Error('Media not found');
+    if (Date.now() > entry.expiresAt) {
+      this.storage.delete(mediaId);
+      throw new Error('Media expired');
+    }
+    return entry.envelope;
+  }
+
+  delete(mediaId) {
+    this.storage.delete(mediaId);
+  }
+
+  cleanupExpired() {
+    const now = Date.now();
+    for (const [id, entry] of this.storage.entries()) {
+      if (now > entry.expiresAt) this.storage.delete(id);
+    }
+  }
+}
+
 const identityManager = new IdentityManager();
 const messageStorage = new SecureMessageStorage();
 const genericStorage = new GenericStorage();
+const mediaStorage = new MediaEnvelopeStorage();
 let sslOptions = null;
 const certPath = path.join(__dirname, 'cert.crt');
 const keyPath = path.join(__dirname, 'cert.key');
@@ -209,7 +253,7 @@ if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
     fs.writeFileSync(keyPath, pems.private);
     fs.writeFileSync(certPath, pems.cert);
 
-    console.log('[✓] Certificats auto-signés générés et sauvegardés');
+    console.log('[OK] Certificats auto-signes generes');
   } catch(e) {
     console.error('[!] Erreur génération certificat:', e.message);
     process.exit(1);
@@ -220,7 +264,7 @@ try {
     key: fs.readFileSync(keyPath),
     cert: fs.readFileSync(certPath)
   };
-  console.log('[✓] Certificats chargés avec succès');
+  console.log('[OK] Certificats charges');
 } catch(e) {
   console.error('ERROR: Cannot load certificates');
   console.error(e.message);
@@ -232,6 +276,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 app.use(rateLimiter.middleware());
 app.use((req, res, next) => {
+  if (req.path.startsWith('/api/media/')) return next();
   if (req.body && Object.keys(req.body).length > 0) {
     if (JSON.stringify(req.body).length > 1000000) {
       return res.status(413).json({ error: 'Payload too large' });
@@ -396,6 +441,48 @@ app.delete('/api/storage/:key', (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
+app.post('/api/media/store', express.json({ limit: '150mb' }), (req, res) => {
+  try {
+    const { mediaId, envelope } = req.body;
+    if (!mediaId || !envelope) {
+      return res.status(400).json({ error: 'Missing mediaId or envelope' });
+    }
+    if (!envelope.mimeType || !ALLOWED_MIME_TYPES.has(envelope.mimeType)) {
+      return res.status(400).json({ error: 'Type MIME non autorise' });
+    }
+    if (!envelope.encrypted || !envelope.salt || !envelope.ephemeralPub || !envelope.metaHmac) {
+      return res.status(400).json({ error: 'Enveloppe incomplete' });
+    }
+    mediaStorage.store(mediaId, envelope);
+    auditLogger.log('media_store', mediaId, 'success');
+    res.json({ success: true, mediaId, expiresIn: mediaStorage.TTL });
+  } catch (error) {
+    auditLogger.log('media_store', req.body?.mediaId || 'unknown', 'failed', error.message);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/media/retrieve/:mediaId', (req, res) => {
+  try {
+    const envelope = mediaStorage.retrieve(req.params.mediaId);
+    auditLogger.log('media_retrieve', req.params.mediaId, 'success');
+    res.json({ envelope });
+  } catch (error) {
+    auditLogger.log('media_retrieve', req.params.mediaId, 'failed', error.message);
+    res.status(404).json({ error: error.message });
+  }
+});
+
+app.delete('/api/media/:mediaId', (req, res) => {
+  try {
+    mediaStorage.delete(req.params.mediaId);
+    auditLogger.log('media_delete', req.params.mediaId, 'success');
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.get('/api/audit/logs', (req, res) => {
   const logs = auditLogger.exportLogs(100);
   res.json({ logs, count: logs.length });
@@ -414,7 +501,7 @@ app.get('/api/security/status', (req, res) => {
       'Encrypted Storage: Active (AES-256-GCM)',
       'Brute Force Protection: Active (15-min blocks)',
       'TOR Network: Active (hidden service)',
-      'No Emojis Mode: Enabled'
+      'Media E2E: Active (AES-256-GCM chunked)'
     ],
     status: 'secure',
     messagesTTL: messageStorage.TTL,
@@ -426,6 +513,7 @@ app.get('/api/security/status', (req, res) => {
 });
 setInterval(() => {
   messageStorage.cleanupExpired();
+  mediaStorage.cleanupExpired();
   auditLogger.log('maintenance', 'system', 'success', 'cleanup_completed');
 }, 60000);
 

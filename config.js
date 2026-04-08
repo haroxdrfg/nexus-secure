@@ -1,5 +1,6 @@
 /**
  * Configuration centralisée et sécurisée
+ * COPY THIS FILE TO config.js AND UPDATE WITH YOUR VALUES
  */
 
 module.exports = {
@@ -12,7 +13,7 @@ module.exports = {
     ['http://localhost:3000', 'https://localhost:3000'],
   
   // JWT Secret (à mettre en .env)
-  JWT_SECRET: process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION_USE_ENV',
+  JWT_SECRET: process.env.JWT_SECRET || 'YOUR_SECURE_JWT_SECRET_HERE',
   JWT_EXPIRY: '24h',
   
   // Rate Limiting
