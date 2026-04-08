@@ -22,3 +22,7 @@ data/
 cert.crt
 cert.key
 audit.log
+index.html
+script.js
+style.css
+mobile.css
