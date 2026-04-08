@@ -600,7 +600,8 @@ app.post('/api/turnstile/verify', async (req, res) => {
   res.json(result);
 });
 app.get('/api/pow/challenge', (req, res) => {
-  const challenge = proofOfWork.generateChallenge();
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+  const challenge = proofOfWork.generateChallenge(ip);
   res.json(challenge);
 });
 app.post('/api/pow/verify', (req, res) => {
@@ -608,7 +609,8 @@ app.post('/api/pow/verify', (req, res) => {
   if (!challenge || nonce === undefined) {
     return res.status(400).json({ error: 'Missing challenge or nonce' });
   }
-  const result = proofOfWork.verifyProof(challenge, String(nonce));
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+  const result = proofOfWork.verifyProof(challenge, String(nonce), ip);
   if (!result.valid) {
     return res.status(403).json({ error: 'Invalid proof', reason: result.reason });
   }

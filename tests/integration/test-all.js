@@ -126,7 +126,7 @@ async function runTests() {
   console.log('\n3. Anti-Bot Systems');
 
   const pow = new ProofOfWork(2);
-  const challenge = pow.generateChallenge();
+  const challenge = pow.generateChallenge('10.0.0.1');
   assert(challenge.challenge && challenge.difficulty === 2, 'PoW challenge generated');
 
   let nonce = 0;
@@ -136,10 +136,10 @@ async function runTests() {
     if (hash.startsWith('00')) break;
     nonce++;
   }
-  const powResult = pow.verifyProof(challenge.challenge, String(nonce));
+  const powResult = pow.verifyProof(challenge.challenge, String(nonce), '10.0.0.1');
   assert(powResult.valid === true, 'PoW valid proof accepted');
 
-  const powResult2 = pow.verifyProof(challenge.challenge, String(nonce));
+  const powResult2 = pow.verifyProof(challenge.challenge, String(nonce), '10.0.0.1');
   assert(powResult2.valid === false && powResult2.reason === 'already_used', 'PoW replay rejected');
 
   const powResult3 = pow.verifyProof(challenge.challenge + 'x', '0');
@@ -148,6 +148,22 @@ async function runTests() {
   const powResult4 = pow.verifyProof(pow.generateChallenge().challenge, '0');
   assert(powResult4.valid === false, 'PoW wrong nonce rejected');
 
+  const bigNonce = 'a'.repeat(100);
+  const powResult5 = pow.verifyProof(pow.generateChallenge().challenge, bigNonce);
+  assert(powResult5.valid === false && powResult5.reason === 'nonce_too_long', 'PoW rejects oversized nonce');
+
+  const ipChallenge = pow.generateChallenge('10.0.0.1');
+  let ipNonce = 0;
+  while (true) {
+    const h = crypto.createHash('sha256').update(ipChallenge.challenge + ipNonce).digest('hex');
+    if (h.startsWith('00')) break;
+    ipNonce++;
+  }
+  const ipMismatch = pow.verifyProof(ipChallenge.challenge, String(ipNonce), '10.0.0.2');
+  assert(ipMismatch.valid === false && ipMismatch.reason === 'ip_mismatch', 'PoW rejects IP mismatch');
+
+  assert(typeof pow.getDifficulty() === 'number', 'PoW adaptive difficulty accessible');
+
   const fpThrottle = new FingerprintThrottle();
   for (let i = 0; i < 20; i++) {
     fpThrottle.check('test-fp');
@@ -155,6 +171,15 @@ async function runTests() {
   const throttleResult = fpThrottle.check('test-fp');
   assert(throttleResult.allowed === false, 'Fingerprint throttle blocks after limit');
   assert(fpThrottle.check('other-fp').allowed === true, 'Different fingerprint not blocked');
+
+  const mockReq = { headers: { 'user-agent': 'TestAgent/1.0', 'accept-language': 'en', 'accept-encoding': 'gzip' }, ip: '192.168.1.100' };
+  const computedFP = FingerprintThrottle.computeFingerprint(mockReq);
+  assert(computedFP.length === 32 && /^[a-f0-9]+$/.test(computedFP), 'Server-side fingerprint is 32 hex');
+  const computedFP2 = FingerprintThrottle.computeFingerprint(mockReq);
+  assert(computedFP === computedFP2, 'Same request produces same fingerprint');
+  const mockReq2 = { headers: { 'user-agent': 'OtherAgent', 'accept-language': 'fr', 'accept-encoding': 'br' }, ip: '10.0.0.1' };
+  const computedFP3 = FingerprintThrottle.computeFingerprint(mockReq2);
+  assert(computedFP3 !== computedFP, 'Different client produces different fingerprint');
 
   const turnstile = new TurnstileVerifier('test-secret-key');
   const noTokenResult = await turnstile.verify(null, '1.2.3.4');

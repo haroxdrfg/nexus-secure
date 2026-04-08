@@ -3,6 +3,17 @@
 const crypto = require('crypto');
 const https = require('https');
 
+const MAX_MAP_SIZE = 50000;
+
+function evictOldest(map, maxSize) {
+  if (map.size <= maxSize) return;
+  const excess = map.size - maxSize;
+  const iter = map.keys();
+  for (let i = 0; i < excess; i++) {
+    map.delete(iter.next().value);
+  }
+}
+
 class TurnstileVerifier {
   constructor(secretKey) {
     if (!secretKey || typeof secretKey !== 'string') {
@@ -12,6 +23,7 @@ class TurnstileVerifier {
     this.verifyUrl = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
     this.verifiedTokens = new Map();
     this.TOKEN_TTL = 300000;
+    this.MAX_TOKENS = MAX_MAP_SIZE;
     this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
   }
 
@@ -26,6 +38,9 @@ class TurnstileVerifier {
       const cached = this.verifiedTokens.get(token);
       if (cached) {
         if (Date.now() - cached.timestamp < this.TOKEN_TTL) {
+          if (cached.ip !== remoteIP) {
+            return resolve({ success: false, reason: 'ip_mismatch' });
+          }
           return resolve({ success: true, cached: true });
         }
         this.verifiedTokens.delete(token);
@@ -53,6 +68,7 @@ class TurnstileVerifier {
           try {
             const result = JSON.parse(body);
             if (result.success) {
+              evictOldest(this.verifiedTokens, this.MAX_TOKENS);
               this.verifiedTokens.set(token, { timestamp: Date.now(), ip: remoteIP });
             }
             resolve({
@@ -115,21 +131,49 @@ class TurnstileVerifier {
 }
 
 class ProofOfWork {
-  constructor(difficulty = 4) {
+  constructor(difficulty = 4, options = {}) {
+    this.baseDifficulty = difficulty;
     this.difficulty = difficulty;
+    this.maxDifficulty = options.maxDifficulty || 6;
     this.challenges = new Map();
     this.CHALLENGE_TTL = 120000;
+    this.MAX_NONCE_LENGTH = 64;
+    this.MAX_CHALLENGES = MAX_MAP_SIZE;
+    this.solveTimes = [];
+    this.ADAPT_WINDOW = 60000;
+    this.ADAPT_THRESHOLD_HIGH = 100;
+    this.ADAPT_THRESHOLD_LOW = 20;
     this.cleanupInterval = setInterval(() => this.cleanup(), 30000);
+    this.adaptInterval = setInterval(() => this.adaptDifficulty(), 15000);
   }
 
-  generateChallenge() {
+  adaptDifficulty() {
+    const now = Date.now();
+    this.solveTimes = this.solveTimes.filter(t => now - t < this.ADAPT_WINDOW);
+    const rate = this.solveTimes.length;
+    if (rate > this.ADAPT_THRESHOLD_HIGH && this.difficulty < this.maxDifficulty) {
+      this.difficulty++;
+    } else if (rate < this.ADAPT_THRESHOLD_LOW && this.difficulty > this.baseDifficulty) {
+      this.difficulty--;
+    }
+  }
+
+  getDifficulty() {
+    return this.difficulty;
+  }
+
+  generateChallenge(clientIP) {
+    evictOldest(this.challenges, this.MAX_CHALLENGES);
     const challenge = crypto.randomBytes(32).toString('hex');
     const timestamp = Date.now();
-    this.challenges.set(challenge, { timestamp, solved: false });
+    this.challenges.set(challenge, { timestamp, solved: false, ip: clientIP || null });
     return { challenge, difficulty: this.difficulty, timestamp };
   }
 
-  verifyProof(challenge, nonce) {
+  verifyProof(challenge, nonce, clientIP) {
+    if (typeof nonce === 'string' && nonce.length > this.MAX_NONCE_LENGTH) {
+      return { valid: false, reason: 'nonce_too_long' };
+    }
     const entry = this.challenges.get(challenge);
     if (!entry) return { valid: false, reason: 'unknown_challenge' };
     if (Date.now() - entry.timestamp > this.CHALLENGE_TTL) {
@@ -137,15 +181,19 @@ class ProofOfWork {
       return { valid: false, reason: 'expired' };
     }
     if (entry.solved) return { valid: false, reason: 'already_used' };
+    if (entry.ip && clientIP && entry.ip !== clientIP) {
+      return { valid: false, reason: 'ip_mismatch' };
+    }
     const hash = crypto.createHash('sha256')
-      .update(challenge + nonce)
+      .update(challenge + String(nonce))
       .digest('hex');
-    const prefix = '0'.repeat(this.difficulty);
+    const prefix = '0'.repeat(entry.difficulty || this.difficulty);
     if (!hash.startsWith(prefix)) {
       return { valid: false, reason: 'invalid_proof' };
     }
     entry.solved = true;
-    return { valid: true, hash };
+    this.solveTimes.push(Date.now());
+    return { valid: true, hash, difficulty: entry.difficulty || this.difficulty };
   }
 
   middleware() {
@@ -155,7 +203,8 @@ class ProofOfWork {
       if (!powChallenge || !powNonce) {
         return res.status(403).json({ error: 'Proof of work required', code: 'POW_REQUIRED' });
       }
-      const result = this.verifyProof(powChallenge, powNonce);
+      const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+      const result = this.verifyProof(powChallenge, powNonce, ip);
       if (!result.valid) {
         return res.status(403).json({ error: 'Invalid proof of work', code: 'POW_FAILED', reason: result.reason });
       }
@@ -171,20 +220,32 @@ class ProofOfWork {
         this.challenges.delete(ch);
       }
     }
+    this.solveTimes = this.solveTimes.filter(t => now - t < this.ADAPT_WINDOW);
   }
 
   destroy() {
     clearInterval(this.cleanupInterval);
+    clearInterval(this.adaptInterval);
     this.challenges.clear();
+    this.solveTimes = [];
   }
 }
 
 class FingerprintThrottle {
-  constructor() {
+  constructor(options = {}) {
     this.fingerprints = new Map();
-    this.MAX_PER_FP = 20;
-    this.WINDOW = 60000;
+    this.MAX_PER_FP = options.maxPerFP || 20;
+    this.WINDOW = options.window || 60000;
+    this.MAX_FINGERPRINTS = MAX_MAP_SIZE;
     this.cleanupInterval = setInterval(() => this.cleanup(), 30000);
+  }
+
+  static computeFingerprint(req) {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection?.remoteAddress || '';
+    const ua = req.headers['user-agent'] || '';
+    const lang = req.headers['accept-language'] || '';
+    const accept = req.headers['accept-encoding'] || '';
+    return crypto.createHash('sha256').update(ip + '|' + ua + '|' + lang + '|' + accept).digest('hex').slice(0, 32);
   }
 
   check(fingerprint) {
@@ -192,6 +253,7 @@ class FingerprintThrottle {
     const now = Date.now();
     let entry = this.fingerprints.get(fingerprint);
     if (!entry) {
+      evictOldest(this.fingerprints, this.MAX_FINGERPRINTS);
       entry = { requests: [], blocked: false };
       this.fingerprints.set(fingerprint, entry);
     }
@@ -206,13 +268,12 @@ class FingerprintThrottle {
 
   middleware() {
     return (req, res, next) => {
-      const fp = req.headers['x-client-fingerprint'];
-      if (fp) {
-        const result = this.check(fp);
-        if (!result.allowed) {
-          return res.status(429).json({ error: 'Too many requests from this client', code: 'FP_THROTTLED' });
-        }
+      const fp = FingerprintThrottle.computeFingerprint(req);
+      const result = this.check(fp);
+      if (!result.allowed) {
+        return res.status(429).json({ error: 'Too many requests from this client', code: 'FP_THROTTLED' });
       }
+      req.clientFingerprint = fp;
       next();
     };
   }
