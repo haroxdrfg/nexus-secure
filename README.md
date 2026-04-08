@@ -1,140 +1,136 @@
-# NEXUS SECURE - Backend Server
+# NEXUS SECURE
 
-> End-to-End Encrypted Messaging Platform with Photo/Video Support
+End-to-end encrypted messaging platform with encrypted photo and video support.
 
-## Nouveautes
+## Features
 
-- Envoi de photos et videos chiffrees de bout en bout (AES-256-GCM par chunks + ECDH)
-- Preview du media dans la zone d'envoi avant confirmation
-- Routes API : POST/GET/DELETE /api/media/* avec TTL 10 min
-- 30 tests automatises (20 unitaires + 10 serveur)
-- Interface web complete avec bouton Media
-- Nettoyage total : zero emoji, zero commentaire de code
+- End-to-end encrypted text messaging (ECDH P-256 + AES-256-GCM + ECDSA)
+- Encrypted photo and video sending (AES-256-GCM chunked, 5 MB chunks, up to 100 MB)
+- Forward secrecy with per-message key derivation (Double Ratchet pattern)
+- Zero-knowledge server: stores only opaque encrypted blobs, cannot decrypt anything
+- Media preview in the input area before sending
+- Automatic expiry: messages 2 min TTL, media 10 min TTL
+- 30 automated tests (20 unit + 10 server)
 
-## Overview
+## Cryptographic Stack
 
-NEXUS SECURE is a production-grade backend server for end-to-end encrypted messaging. It implements modern cryptographic protocols to guarantee message confidentiality, integrity, and authenticity using elliptic curve cryptography (ECDH/ECDSA) with forward secrecy.
+| Layer | Algorithm | Purpose |
+|---|---|---|
+| Key Exchange | ECDH P-256 | Shared secret derivation |
+| Key Derivation | HKDF-SHA256 | AES key from ECDH shared secret |
+| Encryption | AES-256-GCM | Authenticated encryption (text + media) |
+| Signatures | ECDSA P-256 + SHA-256 | Message and media authenticity |
+| Integrity | HMAC-SHA256 | Media envelope integrity, audit log tamper detection |
+| Forward Secrecy | Unidirectional ratchet | Per-message unique keys, key compromise isolation |
 
-The server operates on a zero-knowledge model: it stores only opaque encrypted blobs and has no capability to decrypt message contents, even if fully compromised.
+### Media Encryption Pipeline
+
+1. Sender generates ephemeral ECDH P-256 key pair
+2. Shared secret derived via ECDH with recipient public key
+3. AES-256 key derived via HKDF-SHA256 from shared secret + random salt
+4. Media split into 5 MB chunks, each encrypted with AES-256-GCM (unique IV per chunk)
+5. HMAC-SHA256 computed over all encrypted chunks
+6. ECDSA signature over the media reference payload
+7. Server stores opaque encrypted envelope (cannot read content)
+8. Recipient reverses the pipeline using their private key
+
+Supported media types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`.
 
 ## Architecture
 
-### Core Backend Modules
+### Server Modules
 
-#### Cryptography (`crypto-advanced.js`)
-- Elliptic Curve Diffie-Hellman (ECDH) key exchange
-- ECDSA digital signatures with SHA-256
-- AES-256-GCM authenticated encryption
-- Fail-hard error handling: all cryptographic failures throw exceptions
+- `server.js` - Express HTTPS server, API routes, media storage with TTL
+- `crypto-advanced.js` - ECDH key exchange, ECDSA signatures, AES-256-GCM encryption
+- `e2e-secure.js` - Zero-knowledge encrypted message storage
+- `forward-secrecy.js` - Per-message key derivation ratchet
+- `persistence.js` - HMAC-signed audit logging with tamper detection
+- `rate-limiter.js` - Dual-layer rate limiting (IP + identity)
+- `validators.js` - Input validation and sanitization
+- `database.js` - In-memory storage with integrity checks
+- `config.example.js` - Configuration template
 
-#### End-to-End Storage (`e2e-secure.js`)
-- Zero-knowledge server design
-- Messages stored as opaque encrypted blobs
-- Server cannot decrypt message contents
-- Session metadata isolated from encrypted payload
-- Security guaranteed even under full server compromise
+### Client Modules
 
-#### Forward Secrecy (`forward-secrecy.js`)
-- Per-message unique key derivation using unidirectional ratchet
-- Key compromise isolation: one key does not affect past or future messages
-- HMAC-based per-message authentication
-- Simplified Double Ratchet pattern (inspired by Signal Protocol)
+- `script.js` - Client-side E2E crypto (Web Crypto API), media encrypt/decrypt, UI logic
+- `index.html` - Frontend web application
+- `style.css` - Desktop styles
+- `mobile.css` - Mobile responsive styles
 
-#### Audit Integrity (`persistence.js`)
-- HMAC-signed audit log entries
-- Cryptographic tamper detection
-- Immutable forensic trail for compliance
-- Configurable log retention
+### Test Modules
 
-### Security Features
+- `tests/media-encrypt.js` - Server-side media encryption module (ECDH + AES-256-GCM + HKDF + HMAC)
+- `tests/test-media.js` - 20 unit tests for media encryption
+- `tests/test-media-server.js` - 10 server integration tests for media API routes
 
-**Access Control**
-- CORS validation against configurable whitelist
-- JWT token-based session management (24-hour expiry)
-- Identity-based session isolation
+## API Routes
 
-**Rate Limiting** (`rate-limiter.js`)
-- IP-based limit: 100 requests per minute
-- Identity-based limit: 50 requests per minute
-- Dual-layer enforcement (AND logic)
-- 15-minute block duration on threshold exceeded
+### Text Messages
 
-**Message Lifecycle**
-- Configurable TTL (default: 2 minutes)
-- Automatic message deletion after expiry
-- No server-side retention of plaintext
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/send` | Send encrypted message |
+| GET | `/api/messages/:recipientId` | Retrieve messages for a recipient |
 
-**Transport Security**
-- TLS/SSL enforcement in production
+### Media
+
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/media/store` | Store encrypted media envelope |
+| GET | `/api/media/retrieve/:mediaId` | Retrieve encrypted media envelope |
+| DELETE | `/api/media/:mediaId` | Delete a stored media envelope |
+
+## Security
+
+- CORS whitelist validation
+- JWT session management (24h expiry)
+- Rate limiting: 300 requests/min per IP, 50/min per identity, 15-min block on exceed
+- TLS/SSL with auto-generated self-signed certificates
 - Security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options
-- HTTP Strict-Transport-Security with 1-year max-age
+- Content Security Policy with strict source directives
+- No server-side plaintext retention
 
 ## Installation
 
-See [QUICKSTART.md](QUICKSTART.md) for the full setup guide.
-
 ### Requirements
-- Node.js 20.0.0 or higher
+
+- Node.js 20.0.0+
 - npm
 
-### Quick Setup
+### Setup
 
 ```bash
 git clone https://github.com/haroxdrfg/nexus-secure.git
 cd nexus-secure
 npm install
 cp config.example.js config.js
-# Edit config.js and create .env with your secrets
+```
+
+Edit `config.js` with your values (JWT secret, allowed origins, rate limits, CSP headers).
+
+```bash
 npm start
 ```
 
-## Why .env and config.js are Not in the Repository
+The server starts on HTTPS port 3000 by default.
 
-The `.env` file and `config.js` contain deployment-specific secrets, primarily the `JWT_SECRET` used to sign authentication tokens. Publishing these would allow any third party to forge authentication tokens and gain unauthorized access. Each deployment must generate its own secrets. The `config.example.js` file documents all required configuration without including real values.
+### Why config.js is Not in the Repository
 
-## File Structure
+`config.js` contains deployment-specific secrets (JWT_SECRET, allowed origins). Publishing these would allow forging authentication tokens. Each deployment must generate its own. See `config.example.js` for the required structure.
 
+## Tests
+
+```bash
+node tests/test-media.js
+node tests/test-media-server.js
 ```
-.
-├── server.js                # Express server entry point
-├── config.example.js        # Configuration template (copy to config.js)
-├── crypto-advanced.js       # Cryptographic functions
-├── e2e-secure.js           # Zero-knowledge encrypted message storage
-├── forward-secrecy.js      # Per-message key derivation (ratchet)
-├── persistence.js          # HMAC-signed audit logging
-├── rate-limiter.js         # Dual-layer request rate limiting
-├── validators.js           # Input validation and sanitization
-├── database.js             # In-memory storage with integrity check
-├── index.html              # Frontend web app
-├── script.js               # Client-side E2E crypto + media encrypt
-├── style.css               # UI styles
-├── mobile.css              # Mobile responsive styles
-├── test-e2e.js             # End-to-end security test suite
-├── test-simple.js          # Unit tests
-├── tests/media-encrypt.js  # Module chiffrement media (AES-256-GCM chunked + ECDH)
-├── tests/test-media.js     # 20 tests unitaires media
-├── tests/test-media-server.js # 10 tests serveur media
-├── nginx-config.conf       # Reverse proxy configuration
-├── deploy-production.sh    # Production deployment script
-├── install-ubuntu.sh       # Ubuntu server setup script
-└── package.json            # Dependencies and metadata
-```
-
-Files excluded from the repository (see `.gitignore`):
-- `config.js` - Contains secrets
-- `.env` - Contains secrets
-- `node_modules/` - Dependencies (installed via `npm install`)
 
 ## Dependencies
 
-- **express** ^4.18.2 - Web framework
-- **cors** ^2.8.5 - Cross-origin resource sharing
-- **selfsigned** ^2.1.1 - Self-signed certificate generation for development
+- **express** ^4.18.2
+- **cors** ^2.8.5
+- **selfsigned** ^2.1.1
 
 ## License
 
 MIT
-
-## Version
-
-2.2.0

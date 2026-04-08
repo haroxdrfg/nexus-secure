@@ -34,7 +34,7 @@ function persistNonces() {
 
 const ID_DURATION  = 10 * 60 * 1000;
 const MSG_TTL      = 2 * 60 * 1000;
-const POLL_MS      = 2000;
+const POLL_MS      = 5000;
 const MAX_NONCES   = 2000; // limite taille du Set anti-replay
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -861,6 +861,19 @@ async function confirmSendMedia() {
   await sendMedia(file);
 }
 
+function uint8ToBase64(u8) {
+  let bin = '';
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  return btoa(bin);
+}
+
+function base64ToUint8(b64) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
 async function encryptMediaClient(buffer, sharedKey) {
   const chunks = [];
   let offset = 0;
@@ -870,8 +883,8 @@ async function encryptMediaClient(buffer, sharedKey) {
     const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, sharedKey, slice);
     chunks.push({
       index: chunks.length,
-      iv: btoa(String.fromCharCode(...iv)),
-      ct: btoa(String.fromCharCode(...new Uint8Array(ct)))
+      iv: uint8ToBase64(iv),
+      ct: uint8ToBase64(new Uint8Array(ct))
     });
     offset += MEDIA_CHUNK;
   }
@@ -882,8 +895,8 @@ async function decryptMediaClient(encrypted, sharedKey) {
   const sorted = [...encrypted.chunks].sort((a, b) => a.index - b.index);
   const parts = [];
   for (const chunk of sorted) {
-    const iv = Uint8Array.from(atob(chunk.iv), c => c.charCodeAt(0));
-    const ct = Uint8Array.from(atob(chunk.ct), c => c.charCodeAt(0));
+    const iv = base64ToUint8(chunk.iv);
+    const ct = base64ToUint8(chunk.ct);
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, sharedKey, ct);
     parts.push(new Uint8Array(plain));
   }
