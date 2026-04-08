@@ -1,10 +1,15 @@
 # NEXUS SECURE - Backend Server
 
-> End-to-End Encrypted Messaging Platform
+> End-to-End Encrypted Messaging Platform with Photo/Video Support
 
-## Live Application
+## Nouveautes
 
-[Application link will be provided here]
+- Envoi de photos et videos chiffrees de bout en bout (AES-256-GCM par chunks + ECDH)
+- Preview du media dans la zone d'envoi avant confirmation
+- Routes API : POST/GET/DELETE /api/media/* avec TTL 10 min
+- 30 tests automatises (20 unitaires + 10 serveur)
+- Interface web complete avec bouton Media
+- Nettoyage total : zero emoji, zero commentaire de code
 
 ## Overview
 
@@ -100,20 +105,25 @@ The `.env` file and `config.js` contain deployment-specific secrets, primarily t
 ├── rate-limiter.js         # Dual-layer request rate limiting
 ├── validators.js           # Input validation and sanitization
 ├── database.js             # In-memory storage with integrity check
-├── test-e2e.js            # End-to-end security test suite
-├── test-simple.js         # Unit tests
-├── nginx-config.conf      # Reverse proxy configuration
-├── deploy-production.sh   # Production deployment script
-├── install-ubuntu.sh      # Ubuntu server setup script
-└── package.json           # Dependencies and metadata
+├── index.html              # Frontend web app
+├── script.js               # Client-side E2E crypto + media encrypt
+├── style.css               # UI styles
+├── mobile.css              # Mobile responsive styles
+├── test-e2e.js             # End-to-end security test suite
+├── test-simple.js          # Unit tests
+├── tests/media-encrypt.js  # Module chiffrement media (AES-256-GCM chunked + ECDH)
+├── tests/test-media.js     # 20 tests unitaires media
+├── tests/test-media-server.js # 10 tests serveur media
+├── nginx-config.conf       # Reverse proxy configuration
+├── deploy-production.sh    # Production deployment script
+├── install-ubuntu.sh       # Ubuntu server setup script
+└── package.json            # Dependencies and metadata
 ```
 
 Files excluded from the repository (see `.gitignore`):
 - `config.js` - Contains secrets
 - `.env` - Contains secrets
-- `logs/` - Runtime audit data
 - `node_modules/` - Dependencies (installed via `npm install`)
-- `index.html`, `script.js`, `style.css`, `mobile.css` - Frontend (separate project)
 
 ## Dependencies
 
