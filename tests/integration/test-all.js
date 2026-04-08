@@ -222,19 +222,17 @@ async function runTests() {
   assert(enableResult.status === 'enabled', 'Snowflake enable returns status');
   assert(snowflake.isEnabled() === true, 'Snowflake is enabled');
 
-  const peer1 = snowflake.simulatePeerConnection();
-  assert(peer1.peerId && peer1.sdpOffer && peer1.iceCandidate, 'Peer connection has SDP + ICE');
-  assert(peer1.sdpOffer.includes('webrtc-datachannel'), 'SDP contains datachannel');
-  assert(peer1.iceCandidate.candidate.includes('srflx'), 'ICE candidate is server-reflexive');
+  const peer1 = await snowflake.connectPeer('');
+  assert(peer1.peerId, 'Peer connection returns peerId');
 
-  const relayResult = snowflake.simulateRelay(peer1.peerId, 'test data packet');
+  const relayResult = snowflake.relayData(peer1.peerId, 'test data packet');
   assert(relayResult.relayed === true, 'Data relayed through peer');
   assert(relayResult.shapedSize >= relayResult.originalSize, 'Shaped size >= original size');
 
-  const peer2 = snowflake.simulatePeerConnection();
+  const peer2 = await snowflake.connectPeer('');
   const stats = snowflake.getStats();
   assert(stats.activePeers === 2, 'Two active peers');
-  assert(stats.totalRelayed > 0, 'Relay count tracked');
+  assert(stats.stats.totalRelayed > 0, 'Relay count tracked');
 
   const dcResult = snowflake.disconnectPeer(peer1.peerId);
   assert(dcResult.disconnected === true, 'Peer disconnected');
@@ -265,8 +263,8 @@ async function runTests() {
   assert(front.connectTo && front.hostHeader, 'Domain fronting selects front + host');
   assert(front.connectTo !== front.hostHeader, 'Front domain differs from real host');
 
-  const headers = fronting.buildHeaders({ test: true });
-  assert(headers['Host'] && headers['Content-Type'], 'Domain fronting builds proper headers');
+  const req = fronting.buildRequest('/proxy', { test: true });
+  assert(req.headers['Host'] && req.headers['Content-Type'], 'Domain fronting builds proper headers');
 
   const disableResult = snowflake.disable();
   assert(disableResult.status === 'disabled', 'Snowflake disabled');

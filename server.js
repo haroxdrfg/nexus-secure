@@ -623,9 +623,10 @@ app.post('/api/snowflake/disable', (req, res) => {
 app.get('/api/snowflake/status', (req, res) => {
   res.json(snowflakeProxy.getStats());
 });
-app.post('/api/snowflake/connect', (req, res) => {
+app.post('/api/snowflake/connect', async (req, res) => {
   try {
-    const peer = snowflakeProxy.simulatePeerConnection();
+    const { sdpOffer } = req.body;
+    const peer = await snowflakeProxy.connectPeer(sdpOffer || '');
     res.json(peer);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -635,7 +636,7 @@ app.post('/api/snowflake/relay', (req, res) => {
   try {
     const { peerId, data } = req.body;
     if (!peerId || !data) return res.status(400).json({ error: 'Missing peerId or data' });
-    const result = snowflakeProxy.simulateRelay(peerId, data);
+    const result = snowflakeProxy.relayData(peerId, data);
     res.json(result);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -675,7 +676,7 @@ app.get('/api/security/status', (req, res) => {
       'Encrypted File Transfer: Active (AES-256-GCM chunked)',
       'Blind Server: Active (sealed sender + metadata stripping)',
       'Anti-Bot: Active (PoW + fingerprint throttle)',
-      'Snowflake Proxy: ' + (snowflakeProxy.isEnabled() ? 'Active' : 'Standby'),
+      'Snowflake Proxy: ' + (snowflakeProxy.isEnabled() ? 'Active' : 'Standby') + ' (' + (snowflakeProxy.hasWebRTC ? 'native WebRTC' : 'fallback') + ')',
       'Traffic Shaping: Active (video-call/social-scroll/browsing)',
       'Rate Limiting: Active (100 req/min)',
       'Audit Logging: Active (metadata-only)',
