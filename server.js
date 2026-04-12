@@ -282,6 +282,7 @@ try {
   console.error(e.message);
   process.exit(1);
 }
+app.set('trust proxy', 1);
 app.use(cors(corsOptions));
 app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '10mb' }));
